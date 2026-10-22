@@ -212,15 +212,21 @@ covers every line above it.
 
 ## Using a table with ReCON
 
-ReCON looks for a table in `STEAM_TABLE_DIR` (default `/steam2guid`) each time
-it searches for SteamIDs. GUIDs the table has are answered at once; only
-accounts above the table's range are brute-forced. With no table, ReCON
+ReCON looks for the table files next to its `players.db` (`/data` by default)
+each time it searches for SteamIDs. GUIDs the table has are answered at once;
+only accounts above the table's range are brute-forced. With no table, ReCON
 searches as before. The table is opened fresh for every search, so adding or
 replacing it needs no restart.
 
-Mount it read-only; several ReCON containers can share one copy:
+Copy the `steam2guid-*.bin` files (and `steam2guid-manifest.sig`, if signed)
+into each server's data folder, beside `players.db`.
+
+To keep the table somewhere else, or share one copy between several ReCON
+containers, set `STEAM_TABLE_DIR` and mount it read-only:
 
 ```yaml
+    environment:
+      STEAM_TABLE_DIR: /steam2guid
     volumes:
       - /mnt/user/appdata/rcon/deerisle:/data
       - /mnt/user/appdata/steam2guid-table:/steam2guid:ro
