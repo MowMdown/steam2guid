@@ -1,0 +1,107 @@
+# Builds a steam2guid table and attaches it to a GitHub release.
+#
+# Run it from Actions > Build table > Run workflow. It builds steam2guid,
+# builds the table, signs it if the STEAM2GUID_SIGNING_KEY secret is set,
+# checks the signature, and uploads the parts (and manifest) to the release
+# named by "tag", creating the release if needed.
+#
+# Signing: add a repository secret STEAM2GUID_SIGNING_KEY holding the whole
+# contents of your private key file (the "steam2guid-private-key ..." line).
+# Without it the table is published unsigned.
+
+name: Build table
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to attach the table to"
+        default: "table-v1"
+        required: true
+      exp:
+        description: "--exp: table of 2^n accounts (31 = every account in use today)"
+        default: "31"
+        required: true
+      bytes:
+        description: "--bytes: 2 (smallest), 4 or 8"
+        default: "2"
+        required: true
+      part_size:
+        description: "--part-size (must stay under GitHub's 2 GiB per file)"
+        default: "1G"
+        required: true
+      mem:
+        description: "--mem for sorting (public repos have 16 GB, private 8 GB)"
+        default: "8G"
+        required: true
+
+permissions:
+  contents: write   # to create the release and upload files
+
+jobs:
+
+  table:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version-file: go.mod
+
+    - name: Build steam2guid
+      run: CGO_ENABLED=0 go build -trimpath -o steam2guid .
+
+    - name: Build the table
+      env:
+        SIGNING_KEY: ${{ secrets.STEAM2GUID_SIGNING_KEY }}
+      run: |
+        sign=()
+        if [ -n "$SIGNING_KEY" ]; then
+          umask 077
+          printf '%s\n' "$SIGNING_KEY" > "$RUNNER_TEMP/signing.key"
+          sign=(--sign-key "$RUNNER_TEMP/signing.key")
+        else
+          echo "::warning::STEAM2GUID_SIGNING_KEY isn't set: the table will be unsigned"
+        fi
+        ./steam2guid --out "$RUNNER_TEMP/table" \
+          --exp "${{ inputs.exp }}" --bytes "${{ inputs.bytes }}" \
+          --part-size "${{ inputs.part_size }}" --mem "${{ inputs.mem }}" \
+          "${sign[@]}"
+        rm -f "$RUNNER_TEMP/signing.key"
+
+    - name: Check the signature
+      run: |
+        if [ -f "$RUNNER_TEMP/table/steam2guid-manifest.sig" ]; then
+          ./steam2guid check --dir "$RUNNER_TEMP/table"
+        else
+          echo "unsigned table: nothing to check"
+        fi
+        ./steam2guid info --dir "$RUNNER_TEMP/table" | tee "$RUNNER_TEMP/info.txt"
+
+    - name: Publish to the release
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TAG: ${{ inputs.tag }}
+      run: |
+        cd "$RUNNER_TEMP/table"
+        {
+          echo "steam2guid table built with:"
+          echo
+          echo '    steam2guid --exp ${{ inputs.exp }} --bytes ${{ inputs.bytes }} --part-size ${{ inputs.part_size }}'
+          echo
+          echo '```'
+          cat "$RUNNER_TEMP/info.txt"
+          echo '```'
+          echo
+          echo "Download every file into one folder, then check it with: steam2guid check --dir <folder>"
+        } > "$RUNNER_TEMP/notes.md"
+        if gh release view "$TAG" >/dev/null 2>&1; then
+          echo "release $TAG exists: replacing its files"
+          gh release upload "$TAG" steam2guid-* --clobber
+        else
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "$TAG" \
+            --notes-file "$RUNNER_TEMP/notes.md" steam2guid-*
+        fi
