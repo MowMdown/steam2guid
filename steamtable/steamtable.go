@@ -336,15 +336,40 @@ func (t *Table) Lookup(guid string) (steamID64 uint64, found bool, err error) {
 	return t.LookupRaw(g)
 }
 
-// LookupRaw is Lookup for a GUID's raw 16 bytes.
-func (t *Table) LookupRaw(g [16]byte) (uint64, bool, error) {
-	group, key := Split(&g, t.IndexBits)
+// partIndex is the index in t.parts of the part holding a group.
+func (t *Table) partIndex(group uint32) (int, error) {
 	i := sort.Search(len(t.parts), func(i int) bool {
 		h := t.parts[i].h
 		return uint64(h.FirstGroup)+uint64(h.Groups) > uint64(group)
 	})
 	if i == len(t.parts) {
-		return 0, false, errors.New("group outside the table")
+		return 0, errors.New("group outside the table")
+	}
+	return i, nil
+}
+
+// PartFile is the file name of the part that holds a hex GUID: where its
+// entry is if the table has it, and the one file a lookup reads either way.
+// It needs no disk read: parts split the table by the GUID's leading bits.
+func (t *Table) PartFile(guid string) (string, error) {
+	g, err := ParseGUID(guid)
+	if err != nil {
+		return "", err
+	}
+	group, _ := Split(&g, t.IndexBits)
+	i, err := t.partIndex(group)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Base(t.parts[i].f.Name()), nil
+}
+
+// LookupRaw is Lookup for a GUID's raw 16 bytes.
+func (t *Table) LookupRaw(g [16]byte) (uint64, bool, error) {
+	group, key := Split(&g, t.IndexBits)
+	i, err := t.partIndex(group)
+	if err != nil {
+		return 0, false, err
 	}
 	p := t.parts[i]
 	local := group - p.h.FirstGroup
