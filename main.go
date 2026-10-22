@@ -311,15 +311,20 @@ func cmdLookup(args []string) error {
 		start := time.Now()
 		id, found, err := t.Lookup(g)
 		took := time.Since(start).Round(time.Microsecond)
-		switch {
-		case err != nil:
+		if err != nil {
 			return err
-		case found:
+		}
+		file, err := t.PartFile(g)
+		if err != nil {
+			return err
+		}
+		g = strings.ToLower(strings.TrimSpace(g))
+		if found {
 			// A full URL: most terminals make it clickable (Ctrl/Cmd-click).
-			fmt.Printf("%s  https://steamcommunity.com/profiles/%d  (%s)\n", strings.ToLower(g), id, took)
-		default:
+			fmt.Printf("%s  https://steamcommunity.com/profiles/%d  in %s  (%s)\n", g, id, file, took)
+		} else {
 			missing++
-			fmt.Printf("%s  not found (no account below %d has this GUID)  (%s)\n", strings.ToLower(g), t.MaxAccount, took)
+			fmt.Printf("%s  not found in %s (no account below %d has this GUID)  (%s)\n", g, file, t.MaxAccount, took)
 		}
 	}
 	if missing > 0 {
