@@ -517,6 +517,7 @@ const manifestMagic = "steam2guid-manifest 1"
 // them) whose signed tables Check accepts without being told about them.
 var TrustedKeys = []string{
 	// "paste the publisher's public key here",
+	"GPSxosNJdKdyy1d1v47wVwL8KYEalGUj5jDWxa8bswg=",
 }
 
 // ManifestFile is one part file as the manifest records it.
